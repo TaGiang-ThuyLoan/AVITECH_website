@@ -18,7 +18,7 @@ MANUAL_DUPLICATES = {
 MIN_YEAR = 2017  # Only keep publications from this year onwards
 
 # Fields to remove from all entries (e.g., auto-generated metadata)
-FIELDS_TO_REMOVE = ['citation', 'biburl', 'bibsource', 'timestamp']
+FIELDS_TO_REMOVE = ['citation', 'biburl', 'bibsource', 'timestamp', 'type']
 
 # Patterns in 'note' field that indicate it should be removed (query metadata)
 NOTE_REMOVE_PATTERNS = [
@@ -37,19 +37,30 @@ def parse_bib_file(file_path):
 
     # Find all BibTeX entries
     entries = []
-    pattern = r'@(\w+)\{([^,]+),\s*(.*?)\n\}'
+    # Match @type{key, ... } where content can span multiple lines
+    # Pattern captures everything up to the next @ or end of string
+    pattern = r'@(\w+)\s*\{\s*([^,\s]+)\s*,([^@]*?)(?=\n@|\Z)'
     matches = re.finditer(pattern, content, re.DOTALL | re.MULTILINE)
 
     for match in matches:
         entry_type = match.group(1)
         entry_key = match.group(2)
         entry_body = match.group(3)
-        raw_entry = match.group(0)
+
+        # entry_body already includes the closing }, just need to strip extra whitespace
+        # and ensure it ends with exactly one }
+        body_stripped = entry_body.rstrip()
+        if not body_stripped.endswith('}'):
+            body_stripped += '\n}'
+
+        # Reconstruct the full raw entry
+        raw_entry = f"@{entry_type}{{{entry_key},{body_stripped}\n"
 
         # Parse fields (for comparison purposes)
         fields = {}
-        field_pattern = r'(\w+)\s*=\s*\{([^}]*)\}|(\w+)\s*=\s*"([^"]*)"'
-        field_matches = re.finditer(field_pattern, entry_body)
+        # More robust field pattern that handles multi-line values
+        field_pattern = r'(\w+)\s*=\s*\{((?:[^{}]|\{[^{}]*\})*)\}|(\w+)\s*=\s*"([^"]*)"'
+        field_matches = re.finditer(field_pattern, entry_body, re.DOTALL)
 
         for field_match in field_matches:
             if field_match.group(1):
